@@ -1,8 +1,16 @@
+'''
+Author: 张震 116089016+dandelionshade@users.noreply.github.com
+Date: 2025-07-10 15:44:41
+LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
+LastEditTime: 2025-07-10 16:32:02
+FilePath: /lplaterecognition/main.py
+Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+'''
 import json
 import os
 
 import google.genai as genai
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, request, send_file, send_from_directory, Response
 
 # 🔥🔥 FILL THIS OUT FIRST! 🔥🔥
 # Get your Gemini API key by:
@@ -36,10 +44,12 @@ def generate_api():
                 for chunk in response:
                     yield 'data: %s\n\n' % json.dumps({ "text": chunk.text })
 
-            return stream(), {'Content-Type': 'text/event-stream'}
+            return Response(stream(), mimetype='text/event-stream')
 
         except Exception as e:
             return jsonify({ "error": str(e) })
+    # Default response if not POST (though the route is POST-only)
+    return jsonify({"error": "Method not allowed"}), 405
 
 
 @app.route('/<path:path>')
