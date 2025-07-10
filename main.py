@@ -2,7 +2,7 @@
 Author: 张震 116089016+dandelionshade@users.noreply.github.com
 Date: 2025-07-10 15:44:41
 LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
-LastEditTime: 2025-07-10 16:32:02
+LastEditTime: 2025-07-10 16:41:47
 FilePath: /lplaterecognition/main.py
 Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 '''
@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory, Respo
 # Get your Gemini API key by:
 # - Selecting "Add Gemini API" in the "Firebase Studio" panel in the sidebar
 # - Or by visiting https://g.co/ai/idxGetGeminiKey
-API_KEY = 'TODO'
+API_KEY = os.environ.get('API_KEY')
 
 ai = genai.Client(api_key=API_KEY)
 app = Flask(__name__)
