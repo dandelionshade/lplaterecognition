@@ -6,3 +6,18 @@ autopep8 # 一个自动格式化 Python 代码以符合 PEP 8 规范的工具
 google-genai # Google Gemini API 的官方客户端库
 Pillow       # 一个强大的图像处理库，是 PIL (Python Imaging Library) 的一个友好分支
 flask        # 一个轻量级的 Python Web 框架
+python-dotenv # 用于从 .env 文件加载环境变量
+
+# OpenCV 和图像处理依赖
+opencv-python # OpenCV 图像处理库
+numpy        # 数值计算库，OpenCV 的依赖
+
+# OCR 引擎依赖
+paddlepaddle # PaddlePaddle 深度学习框架
+paddleocr    # 百度开源 OCR 引擎
+pytesseract  # Tesseract OCR 的 Python 包装器
+hyperlpr3    # 专门的车牌识别引擎
+
+# 其他工具依赖
+requests     # HTTP 请求库
+werkzeug     # Flask 的底层库，用于文件上传等功能

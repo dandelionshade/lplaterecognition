@@ -1,8 +1,63 @@
-<!--
- * @Author: 张震 116089016+dandelionshade@users.noreply.github.com
- * @Date: 2025-07-11 13:52:36
- * @LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
- * @LastEditTime: 2025-07-11 13:55:00
+# 智能车牌识别平台 - 技术分析文档
+
+## 项目概述
+
+本项目是一个集成多种OCR引擎、OpenCV图像处理和Google Gemini AI的车牌识别解决方案。通过Web界面提供直观的用户体验，支持多种图像处理和识别功能。
+
+## 核心技术架构
+
+### 1. 后端架构 (Flask + Python)
+
+#### 核心组件
+- **Flask Web框架**: 提供HTTP服务和RESTful API
+- **Google Gemini API**: 多模态AI分析能力
+- **OpenCV**: 图像处理和计算机视觉
+- **多OCR引擎集成**: PaddleOCR、Tesseract、HyperLPR3
+
+#### API设计
+```
+POST /api/generate          # Gemini AI内容生成
+POST /api/process-image     # OpenCV图像处理
+POST /api/ocr               # OCR文字识别
+POST /api/upload            # 文件上传
+GET  /api/ocr-engines       # 获取引擎状态
+```
+
+### 2. 前端架构 (现代Web技术)
+
+#### 技术栈
+- **HTML5**: 语义化标记
+- **CSS3**: 现代样式设计（Grid、Flexbox、动画）
+- **JavaScript ES6+**: 异步编程、模块化
+- **响应式设计**: 支持多设备访问
+
+#### 用户界面
+- **标签页导航**: 功能模块化分离
+- **拖拽上传**: 直观的文件操作
+- **实时预览**: 图像处理结果即时显示
+- **流式输出**: Gemini AI结果实时显示
+
+## 技术亮点
+
+### 1. 模块化设计
+- **松耦合架构**: 各功能模块独立，易于维护
+- **插件式OCR**: 新增引擎无需修改核心逻辑
+- **配置化部署**: 环境变量管理配置
+
+### 2. 用户体验优化
+- **响应式布局**: 适配移动端和桌面端
+- **实时反馈**: 处理状态和结果实时显示
+- **错误处理**: 友好的错误提示和恢复机制
+- **性能优化**: 图像压缩和缓存策略
+
+## 开发团队
+
+### 主要贡献者
+- **张震 (@dandelionshade)**: 项目架构师和主要开发者
+
+---
+
+*最后更新: 2025年7月11日*
  * @FilePath: /lplaterecognition/ANALYSIS.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->

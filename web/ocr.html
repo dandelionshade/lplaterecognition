@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能车牌识别与图像处理平台</title>
+  <link rel="stylesheet" href="/ocr-style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1><i class="fas fa-car"></i> 智能车牌识别与图像处理平台</h1>
+      <p class="subtitle">集成 OpenCV 图像处理、PaddleOCR、Tesseract、HyperLPR3 和 Gemini AI</p>
+    </header>
+
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="gemini">
+        <i class="fas fa-brain"></i> Gemini AI 分析
+      </button>
+      <button class="tab-btn" data-tab="ocr">
+        <i class="fas fa-text-width"></i> OCR 文字识别
+      </button>
+      <button class="tab-btn" data-tab="plate">
+        <i class="fas fa-car"></i> 车牌识别
+      </button>
+      <button class="tab-btn" data-tab="process">
+        <i class="fas fa-image"></i> 图像处理
+      </button>
+    </nav>
+
+    <main>
+      <!-- Gemini AI 分析标签页 -->
+      <div id="gemini" class="tab-content active">
+        <div class="panel">
+          <h3><i class="fas fa-robot"></i> Gemini AI 智能分析</h3>
+          <div class="image-input-section">
+            <div class="image-picker">
+              <label class="image-choice">
+                <input type="radio" checked name="chosen-image" value="/car1.png">
+                <img src="/car1.png" alt="示例车辆1">
+              </label>
+              <label class="image-choice">
+                <input type="radio" name="chosen-image" value="/car2.jpg">
+                <img src="/car2.jpg" alt="示例车辆2">
+              </label>
+              <label class="image-choice">
+                <input type="radio" name="chosen-image" value="/car3.jpg">
+                <img src="/car3.jpg" alt="示例车辆3">
+              </label>
+            </div>
+            <div class="upload-section">
+              <label for="gemini-upload" class="upload-btn">
+                <i class="fas fa-upload"></i> 或上传自定义图片
+              </label>
+              <input type="file" id="gemini-upload" accept="image/*" style="display: none;">
+            </div>
+          </div>
+          
+          <div class="prompt-section">
+            <label for="gemini-prompt">请输入您的问题或指令：</label>
+            <input id="gemini-prompt" type="text" placeholder="请分析这张车辆图片" 
+                   value="请详细分析这张图片中的车辆信息，包括车牌号码、车辆类型、颜色等信息">
+            <button id="gemini-analyze" class="action-btn">
+              <i class="fas fa-magic"></i> 开始分析
+            </button>
+          </div>
+          
+          <div class="result-section">
+            <h4>分析结果：</h4>
+            <div id="gemini-result" class="result-box">点击"开始分析"查看结果</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OCR 文字识别标签页 -->
+      <div id="ocr" class="tab-content">
+        <div class="panel">
+          <h3><i class="fas fa-text-width"></i> OCR 文字识别</h3>
+          <div class="image-input-section">
+            <div class="upload-section">
+              <label for="ocr-upload" class="upload-btn">
+                <i class="fas fa-upload"></i> 上传图片
+              </label>
+              <input type="file" id="ocr-upload" accept="image/*" style="display: none;">
+              <div id="ocr-preview" class="image-preview"></div>
+            </div>
+          </div>
+          
+          <div class="engine-selection">
+            <label>选择 OCR 引擎：</label>
+            <div class="engine-options">
+              <label class="engine-option">
+                <input type="radio" name="ocr-engine" value="paddleocr" checked>
+                <span>PaddleOCR</span>
+              </label>
+              <label class="engine-option">
+                <input type="radio" name="ocr-engine" value="tesseract">
+                <span>Tesseract</span>
+              </label>
+            </div>
+            <button id="ocr-recognize" class="action-btn" disabled>
+              <i class="fas fa-search"></i> 开始识别
+            </button>
+          </div>
+          
+          <div class="result-section">
+            <h4>识别结果：</h4>
+            <div id="ocr-result" class="result-box">请先上传图片</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 车牌识别标签页 -->
+      <div id="plate" class="tab-content">
+        <div class="panel">
+          <h3><i class="fas fa-car"></i> 专业车牌识别</h3>
+          <div class="image-input-section">
+            <div class="upload-section">
+              <label for="plate-upload" class="upload-btn">
+                <i class="fas fa-upload"></i> 上传车辆图片
+              </label>
+              <input type="file" id="plate-upload" accept="image/*" style="display: none;">
+              <div id="plate-preview" class="image-preview"></div>
+            </div>
+          </div>
+          
+          <div class="action-section">
+            <button id="plate-recognize" class="action-btn" disabled>
+              <i class="fas fa-search"></i> 识别车牌
+            </button>
+          </div>
+          
+          <div class="result-section">
+            <h4>识别结果：</h4>
+            <div id="plate-result" class="result-box">请先上传车辆图片</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 图像处理标签页 -->
+      <div id="process" class="tab-content">
+        <div class="panel">
+          <h3><i class="fas fa-image"></i> OpenCV 图像处理</h3>
+          <div class="image-input-section">
+            <div class="upload-section">
+              <label for="process-upload" class="upload-btn">
+                <i class="fas fa-upload"></i> 上传图片
+              </label>
+              <input type="file" id="process-upload" accept="image/*" style="display: none;">
+              <div class="image-container">
+                <div class="image-box">
+                  <h5>原图</h5>
+                  <div id="original-preview" class="image-preview"></div>
+                </div>
+                <div class="image-box">
+                  <h5>处理后</h5>
+                  <div id="processed-preview" class="image-preview"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="processing-options">
+            <label>选择处理操作：</label>
+            <div class="operation-grid">
+              <button class="operation-btn" data-operation="gray">
+                <i class="fas fa-adjust"></i> 灰度化
+              </button>
+              <button class="operation-btn" data-operation="blur">
+                <i class="fas fa-search-minus"></i> 模糊
+              </button>
+              <button class="operation-btn" data-operation="edge">
+                <i class="fas fa-border-style"></i> 边缘检测
+              </button>
+              <button class="operation-btn" data-operation="threshold">
+                <i class="fas fa-sliders-h"></i> 二值化
+              </button>
+              <button class="operation-btn" data-operation="enhance">
+                <i class="fas fa-sun"></i> 增强
+              </button>
+              <button class="operation-btn" data-operation="rotate">
+                <i class="fas fa-redo"></i> 旋转
+              </button>
+            </div>
+          </div>
+          
+          <div class="result-section">
+            <h4>处理信息：</h4>
+            <div id="process-result" class="result-box">请先上传图片并选择处理操作</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <p>© 2025 智能车牌识别平台 | 技术支持：OpenCV + PaddleOCR + HyperLPR3 + Gemini AI</p>
+    </footer>
+
+    <!-- 状态指示器 -->
+    <div id="status-engines" class="status-panel">
+      <h4><i class="fas fa-cogs"></i> 引擎状态</h4>
+      <div id="engines-status"></div>
+    </div>
+  </div>
+
+  <!-- 加载必要的 JavaScript 库 -->
+  <script src="https://unpkg.com/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
+  <script src="https://unpkg.com/base64-js@1.5.1/base64js.min.js"></script>
+  <script type="module" src="/ocr-main.js"></script>
+</body>
+
+</html>
