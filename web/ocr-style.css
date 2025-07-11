@@ -602,42 +602,139 @@ footer {
   opacity: 0.9;
 }
 
-/* Markdown 样式增强 */
-.result-box h1, .result-box h2, .result-box h3 {
-  color: #4a5568;
-  margin-top: 20px;
-  margin-bottom: 10px;
-}
-
-.result-box p {
-  margin-bottom: 10px;
-}
-
-.result-box ul, .result-box ol {
-  margin-left: 20px;
-  margin-bottom: 10px;
-}
-
-.result-box code {
-  background: #f1f5f9;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
-  color: #e53e3e;
-}
-
-.result-box pre {
-  background: #f1f5f9;
+/* 高级选项样式 */
+.advanced-options {
+  margin: 15px 0;
   padding: 15px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 10px 0;
+  background: rgba(102, 126, 234, 0.05);
+  border-radius: 10px;
+  border-left: 4px solid #667eea;
 }
 
-.result-box blockquote {
-  border-left: 4px solid #667eea;
-  padding-left: 15px;
-  margin: 10px 0;
+.checkbox-option {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-option input[type="checkbox"] {
+  display: none;
+}
+
+.checkmark {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #667eea;
+  border-radius: 4px;
+  margin-right: 12px;
+  margin-top: 2px;
+  position: relative;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.checkbox-option input[type="checkbox"]:checked + .checkmark {
+  background: #667eea;
+  border-color: #667eea;
+}
+
+.checkbox-option input[type="checkbox"]:checked + .checkmark::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.checkbox-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.checkbox-text i {
+  margin-right: 8px;
+  color: #667eea;
+}
+
+.checkbox-text small {
   color: #718096;
-  font-style: italic;
+  font-size: 0.85em;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* OCR结果增强样式 */
+.info-badge {
+  background: linear-gradient(135deg, #48bb78, #38a169);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 0.9em;
+  margin-bottom: 15px;
+  display: inline-block;
+  font-weight: 600;
+}
+
+.ocr-text-item {
+  margin-bottom: 15px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+}
+
+.ocr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.85em;
+}
+
+.ocr-source {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.detection-method {
+  background: rgba(72, 187, 120, 0.1);
+  color: #48bb78;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.tip {
+  background: rgba(237, 137, 54, 0.1);
+  color: #ed8936;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 15px;
+  font-size: 0.9em;
+  border-left: 4px solid #ed8936;
+}
+
+/* 响应式设计优化 */
+@media (max-width: 768px) {
+  .checkbox-option {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .checkmark {
+    margin-bottom: 8px;
+  }
+  
+  .ocr-meta {
+    flex-direction: column;
+    gap: 8px;
+  }
 }

@@ -191,6 +191,7 @@ function initializeOCRTab() {
     }
     
     const selectedEngine = document.querySelector('input[name="ocr-engine"]:checked').value;
+    const extractPlate = document.getElementById('extract-plate-checkbox')?.checked || false;
     
     // 检查选择的引擎是否可用
     if (!enginesStatus[selectedEngine] || !enginesStatus[selectedEngine].available) {
@@ -209,7 +210,8 @@ function initializeOCRTab() {
         },
         body: JSON.stringify({
           image: currentImages.ocr,
-          engine: selectedEngine
+          engine: selectedEngine,
+          extract_plate: extractPlate  // 添加车牌提取选项
         })
       });
       
@@ -414,15 +416,29 @@ async function fetchImageAsBase64(url) {
 function displayOCRResults(results, container) {
   let html = '';
   
+  // 显示车牌区域使用信息
+  if (results.plate_regions_used > 0) {
+    html += `<div class="info-badge">🎯 已使用车牌区域检测 (${results.plate_regions_used}个区域)</div>`;
+  }
+  
   if (results.texts && results.texts.length > 0) {
     html += '<h5>识别到的文字：</h5>';
     results.texts.forEach((item, index) => {
       const confidenceClass = getConfidenceClass(item.confidence);
+      const sourceIcon = item.region_source === 'full_image' ? '🖼️' : '🎯';
+      const sourceText = item.region_source === 'full_image' ? '整图识别' : '车牌区域识别';
+      
       html += `
         <div class="ocr-text-item">
           <div class="ocr-text">${index + 1}. ${item.text}</div>
-          <div class="ocr-confidence ${confidenceClass}">
-            置信度: ${(item.confidence * 100).toFixed(1)}%
+          <div class="ocr-meta">
+            <span class="ocr-confidence ${confidenceClass}">
+              置信度: ${(item.confidence * 100).toFixed(1)}%
+            </span>
+            <span class="ocr-source">
+              ${sourceIcon} ${sourceText}
+            </span>
+            ${item.detection_method ? `<span class="detection-method">检测方法: ${item.detection_method}</span>` : ''}
           </div>
         </div>
       `;
@@ -431,6 +447,9 @@ function displayOCRResults(results, container) {
     html += `<h5>识别结果：</h5><p>${results.full_text}</p>`;
   } else {
     html += '<p>未识别到文字内容</p>';
+    if (results.plate_regions_used === 0) {
+      html += '<div class="tip">💡 提示：尝试启用"车牌区域提取"功能可以提高车牌识别精度</div>';
+    }
   }
   
   container.innerHTML = html;

@@ -1,18 +1,18 @@
 #!/bin/bash
 ###
- # @Author: 张震 116089016+dandelionshade@users.noreply.github.com
- # @Date: 2025-07-11 15:49:01
- # @LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
- # @LastEditTime: 2025-07-11 15:56:45
- # @FilePath: /lplaterecognition/quickstart.sh
- # @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
-### 
+# @Author: 张震 116089016+dandelionshade@users.noreply.github.com
+# @Date: 2025-07-11 15:49:01
+# @LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
+# @LastEditTime: 2025-07-11 15:56:45
+# @FilePath: /lplaterecognition/quickstart.sh
+# @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+###
 
-# 智能车牌识别平台 - 快速启动脚本
+# 天津仁爱学院车牌识别系统 - 快速启动脚本
 # 作者: 张震
 # 日期: 2025-07-11
 
-echo "🚀 智能车牌识别平台启动脚本"
+echo "🚀 天津仁爱学院车牌识别系统启动脚本"
 echo "================================"
 
 # 检查Python版本

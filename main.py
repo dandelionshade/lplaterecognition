@@ -2,7 +2,7 @@
 Author: 张震 116089016+dandelionshade@users.noreply.github.com
 Date: 2025-07-10 15:44:41
 LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
-LastEditTime: 2025-07-11 16:04:35
+LastEditTime: 2025-07-11 17:12:27
 FilePath: /lplaterecognition/main.py
 Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 '''
@@ -18,6 +18,13 @@ import base64
 import io
 # 导入时间库，用于生成唯一文件名
 import time
+# 导入 Flask 相关模块，增加会话管理功能
+from flask import Flask, jsonify, request, send_file, send_from_directory, Response, session, redirect, url_for, render_template_string
+from werkzeug.utils import secure_filename
+# 导入 functools 用于装饰器
+from functools import wraps
+# 导入 hashlib 用于密码哈希
+import hashlib
 
 # 导入 OpenCV 用于图像处理
 import cv2
@@ -49,9 +56,6 @@ except ImportError:
 
 # 导入 google.genai 库，这是 Google Gemini API 的 Python 客户端。
 import google.genai as genai
-# 从 flask 库导入 Flask 类和一些辅助函数，用于构建 Web 应用。
-from flask import Flask, jsonify, request, send_file, send_from_directory, Response
-from werkzeug.utils import secure_filename
 
 # 加载 .env 文件中的环境变量。
 load_dotenv()
@@ -67,6 +71,328 @@ API_KEY = os.environ.get('API_KEY')
 ai = genai.Client(api_key=API_KEY)
 # 创建一个 Flask 应用实例。
 app = Flask(__name__)
+
+# 设置会话密钥（用于安全会话管理）
+app.secret_key = os.environ.get('SECRET_KEY', 'tianjin_renai_college_plate_recognition_2025')
+
+# 管理员配置
+ADMIN_USERNAME = 'admin'
+ADMIN_PASSWORD_HASH = hashlib.sha256('admin'.encode()).hexdigest()
+
+# 鉴权装饰器
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# HTML模板
+LOGIN_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天津仁爱学院车牌识别系统 - 管理员登录</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        
+        .login-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            width: 400px;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .title {
+            font-size: 1.8em;
+            color: #4a5568;
+            margin-bottom: 30px;
+            font-weight: 600;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #4a5568;
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            color: #718096;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">🚗</div>
+        <h1 class="title">天津仁爱学院<br>车牌识别系统</h1>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        
+        <form method="POST">
+            <div class="form-group">
+                <label for="username">管理员账号</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="login-btn">登录系统</button>
+        </form>
+        
+        <div class="footer">
+            <p>天津仁爱学院智能车牌识别管理系统</p>
+            <p>© 2025 版权所有</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+ADMIN_DASHBOARD_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天津仁爱学院车牌识别系统 - 管理员控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #f7fafc;
+            font-family: 'Microsoft YaHei', sans-serif;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo-text {
+            font-size: 1.5em;
+            font-weight: 600;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .main-content {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+        }
+        
+        .dashboard-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        .card-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        
+        .card-title {
+            font-size: 1.3em;
+            margin-bottom: 10px;
+            color: #2d3748;
+        }
+        
+        .card-description {
+            color: #718096;
+            margin-bottom: 20px;
+        }
+        
+        .card-button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        
+        .card-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-text">🚗 天津仁爱学院车牌识别系统</div>
+            <div class="user-info">
+                <span>欢迎，{{ username }} 管理员</span>
+                <a href="/logout" class="logout-btn">退出登录</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <div class="card-icon">🏠</div>
+                <h3 class="card-title">系统主页</h3>
+                <p class="card-description">访问系统主页，查看平台概览和功能介绍</p>
+                <a href="/home" class="card-button">进入主页</a>
+            </div>
+            
+            <div class="dashboard-card">
+                <div class="card-icon">🔍</div>
+                <h3 class="card-title">车牌识别</h3>
+                <p class="card-description">上传图片进行智能车牌识别和OCR文字识别</p>
+                <a href="/ocr" class="card-button">开始识别</a>
+            </div>
+            
+            <div class="dashboard-card">
+                <div class="card-icon">📊</div>
+                <h3 class="card-title">系统状态</h3>
+                <p class="card-description">查看系统运行状态和OCR引擎可用性</p>
+                <a href="/api/ocr-engines" class="card-button">查看状态</a>
+            </div>
+            
+            <div class="dashboard-card">
+                <div class="card-icon">⚙️</div>
+                <h3 class="card-title">系统设置</h3>
+                <p class="card-description">管理系统配置和用户权限设置</p>
+                <button class="card-button" onclick="alert('功能开发中...')">系统设置</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
 
 # 配置上传文件夹
 UPLOAD_FOLDER = 'uploads'
@@ -171,27 +497,62 @@ def apply_image_processing(image, operation, params=None):
         return image
 
 
-# 定义根路由 ("/") 的处理函数。
-@app.route("/")
-def index():
-    # 当用户访问网站根目录时，发送 web/index.html 文件作为响应。
-    return send_file('web/index.html')
+# 登录页面
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """管理员登录页面"""
+    if request.method == "POST":
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        # 验证用户名和密码
+        if username and password and username == ADMIN_USERNAME and hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASSWORD_HASH:
+            session['logged_in'] = True
+            session['username'] = username
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return render_template_string(LOGIN_TEMPLATE, error="用户名或密码错误")
+    
+    return render_template_string(LOGIN_TEMPLATE)
 
-# 新增主页路由
+# 管理员仪表盘
+@app.route("/admin")
+@login_required
+def admin_dashboard():
+    """管理员仪表盘"""
+    return render_template_string(ADMIN_DASHBOARD_TEMPLATE, username=session.get('username'))
+
+# 登出
+@app.route("/logout")
+def logout():
+    """管理员登出"""
+    session.clear()
+    return redirect(url_for('login'))
+
+# 主页路由 - 需要登录
+@app.route("/")
+@login_required
+def index():
+    return redirect(url_for('home'))
+
+# 主页路由 - 需要登录
 @app.route("/home")
+@login_required
 def home():
     """主页"""
-    return send_file('web/home.html')
+    return send_from_directory('web', 'home.html')
 
-# 新增 OCR 页面路由
+# OCR页面 - 需要登录
 @app.route("/ocr")
+@login_required
 def ocr_page():
-    """OCR 功能页面"""
-    return send_file('web/ocr.html')
+    """OCR识别页面"""
+    return send_from_directory('web', 'ocr.html')
 
 
 # 定义 /api/generate 路由的处理函数，只接受 POST 请求。
 @app.route("/api/generate", methods=["POST"])
+@login_required
 def generate_api():
     # 确保请求方法是 POST。
     if request.method == "POST":
@@ -234,6 +595,7 @@ def generate_api():
 
 # 图像处理 API
 @app.route("/api/process-image", methods=["POST"])
+@login_required
 def process_image_api():
     """处理图像的 API 端点"""
     if request.method == "POST":
@@ -277,6 +639,7 @@ def process_image_api():
 
 # OCR 识别 API
 @app.route("/api/ocr", methods=["POST"])
+@login_required
 def ocr_api():
     """OCR 识别的 API 端点"""
     if request.method == "POST":
@@ -284,6 +647,7 @@ def ocr_api():
             data = request.get_json()
             image_base64 = data.get('image')
             engine = data.get('engine', 'paddleocr')
+            extract_plate = data.get('extract_plate', False)  # 是否提取车牌区域
             
             if not image_base64:
                 return jsonify({"error": "没有提供图像数据"}), 400
@@ -294,22 +658,63 @@ def ocr_api():
                 return jsonify({"error": "图像格式错误"}), 400
             
             results = {}
+            plate_regions = []
+            
+            # 如果启用车牌提取功能
+            if extract_plate:
+                print("开始检测车牌区域...")
+                plate_regions = detect_license_plate_regions(image)
+                print(f"检测到 {len(plate_regions)} 个可能的车牌区域")
             
             # PaddleOCR
             if engine == 'paddleocr' and 'paddleocr' in ocr_engines:
                 try:
-                    ocr_results = ocr_engines['paddleocr'].ocr(image, cls=True)
                     texts = []
-                    for line in ocr_results[0] if ocr_results and ocr_results[0] else []:
-                        if line:
-                            texts.append({
-                                'text': line[1][0],
-                                'confidence': line[1][1],
-                                'bbox': line[0]
-                            })
+                    
+                    # 如果启用车牌提取，先尝试在车牌区域识别
+                    if extract_plate and plate_regions:
+                        print("使用PaddleOCR识别车牌区域...")
+                        for i, region_info in enumerate(plate_regions[:2]):  # 最多处理前2个区域
+                            extracted = extract_and_enhance_plate_region(image, region_info['bbox'])
+                            if extracted:
+                                # 在增强的车牌区域上运行OCR
+                                plate_results = ocr_engines['paddleocr'].ocr(extracted['enhanced'], cls=True)
+                                for line in plate_results[0] if plate_results and plate_results[0] else []:
+                                    if line and line[1][1] > 0.5:  # 置信度阈值
+                                        # 调整坐标到原图
+                                        bbox_orig = region_info['bbox']
+                                        adjusted_bbox = []
+                                        for point in line[0]:
+                                            adjusted_bbox.append([
+                                                point[0] + bbox_orig[0],
+                                                point[1] + bbox_orig[1]
+                                            ])
+                                        
+                                        texts.append({
+                                            'text': line[1][0],
+                                            'confidence': line[1][1],
+                                            'bbox': adjusted_bbox,
+                                            'region_source': f'plate_region_{i}',
+                                            'detection_method': region_info['method']
+                                        })
+                    
+                    # 如果车牌区域没有识别到内容，或者没有启用车牌提取，在整图上识别
+                    if not texts:
+                        print("在整图上使用PaddleOCR识别...")
+                        ocr_results = ocr_engines['paddleocr'].ocr(image, cls=True)
+                        for line in ocr_results[0] if ocr_results and ocr_results[0] else []:
+                            if line:
+                                texts.append({
+                                    'text': line[1][0],
+                                    'confidence': line[1][1],
+                                    'bbox': line[0],
+                                    'region_source': 'full_image'
+                                })
+                    
                     results['paddleocr'] = {
                         'texts': texts,
-                        'available': True
+                        'available': True,
+                        'plate_regions_used': len(plate_regions) if extract_plate else 0
                     }
                 except Exception as e:
                     results['paddleocr'] = {
@@ -321,30 +726,71 @@ def ocr_api():
             if engine == 'tesseract' and TESSERACT_AVAILABLE:
                 try:
                     import pytesseract
-                    # 转换为 PIL 图像
-                    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-                    text = pytesseract.image_to_string(pil_image, lang='chi_sim+eng')
-                    
-                    # 获取详细信息
-                    data_dict = pytesseract.image_to_data(pil_image, output_type=pytesseract.Output.DICT, lang='chi_sim+eng')
                     texts = []
-                    for i in range(len(data_dict['text'])):
-                        if int(data_dict['conf'][i]) > 0:
-                            texts.append({
-                                'text': data_dict['text'][i],
-                                'confidence': float(data_dict['conf'][i]) / 100,
-                                'bbox': [
-                                    data_dict['left'][i],
-                                    data_dict['top'][i],
-                                    data_dict['left'][i] + data_dict['width'][i],
-                                    data_dict['top'][i] + data_dict['height'][i]
-                                ]
-                            })
+                    full_text = ""
+                    
+                    # 如果启用车牌提取，先尝试在车牌区域识别
+                    if extract_plate and plate_regions:
+                        print("使用Tesseract识别车牌区域...")
+                        for i, region_info in enumerate(plate_regions[:2]):  # 最多处理前2个区域
+                            extracted = extract_and_enhance_plate_region(image, region_info['bbox'])
+                            if extracted:
+                                # 转换为 PIL 图像
+                                pil_image = Image.fromarray(cv2.cvtColor(extracted['enhanced'], cv2.COLOR_BGR2RGB))
+                                
+                                # 使用专门的车牌识别配置
+                                config = '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                                text = pytesseract.image_to_string(pil_image, config=config, lang='eng')
+                                
+                                if text.strip():
+                                    # 获取详细信息
+                                    data_dict = pytesseract.image_to_data(pil_image, config=config, output_type=pytesseract.Output.DICT, lang='eng')
+                                    for j in range(len(data_dict['text'])):
+                                        if int(data_dict['conf'][j]) > 30:  # 降低置信度阈值
+                                            bbox_orig = region_info['bbox']
+                                            texts.append({
+                                                'text': data_dict['text'][j],
+                                                'confidence': float(data_dict['conf'][j]) / 100,
+                                                'bbox': [
+                                                    data_dict['left'][j] + bbox_orig[0],
+                                                    data_dict['top'][j] + bbox_orig[1],
+                                                    data_dict['left'][j] + data_dict['width'][j] + bbox_orig[0],
+                                                    data_dict['top'][j] + data_dict['height'][j] + bbox_orig[1]
+                                                ],
+                                                'region_source': f'plate_region_{i}',
+                                                'detection_method': region_info['method']
+                                            })
+                                    full_text += text.strip() + " "
+                    
+                    # 如果车牌区域没有识别到内容，或者没有启用车牌提取，在整图上识别
+                    if not texts:
+                        print("在整图上使用Tesseract识别...")
+                        # 转换为 PIL 图像
+                        pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                        text = pytesseract.image_to_string(pil_image, lang='chi_sim+eng')
+                        full_text = text.strip()
+                        
+                        # 获取详细信息
+                        data_dict = pytesseract.image_to_data(pil_image, output_type=pytesseract.Output.DICT, lang='chi_sim+eng')
+                        for i in range(len(data_dict['text'])):
+                            if int(data_dict['conf'][i]) > 0:
+                                texts.append({
+                                    'text': data_dict['text'][i],
+                                    'confidence': float(data_dict['conf'][i]) / 100,
+                                    'bbox': [
+                                        data_dict['left'][i],
+                                        data_dict['top'][i],
+                                        data_dict['left'][i] + data_dict['width'][i],
+                                        data_dict['top'][i] + data_dict['height'][i]
+                                    ],
+                                    'region_source': 'full_image'
+                                })
                     
                     results['tesseract'] = {
-                        'full_text': text.strip(),
+                        'full_text': full_text,
                         'texts': texts,
-                        'available': True
+                        'available': True,
+                        'plate_regions_used': len(plate_regions) if extract_plate else 0
                     }
                 except Exception as e:
                     results['tesseract'] = {
@@ -421,6 +867,7 @@ def ocr_api():
 
 # 获取可用的 OCR 引擎列表
 @app.route("/api/ocr-engines", methods=["GET"])
+@login_required
 def get_ocr_engines():
     """获取可用的 OCR 引擎列表"""
     engines = {}
@@ -475,6 +922,7 @@ def get_ocr_engines():
 
 # 文件上传 API
 @app.route("/api/upload", methods=["POST"])
+@login_required
 def upload_file():
     """文件上传 API"""
     if 'file' not in request.files:
@@ -517,3 +965,177 @@ if __name__ == "__main__":
     # 运行 Flask 应用。
     # port: 设置监听的端口，从环境变量 'PORT' 获取，如果不存在则默认为 8080。
     app.run(host='127.0.0.1', port=int(os.environ.get('PORT', 8080)), debug=True)
+
+# 车牌检测和处理函数
+def detect_license_plate_regions(image):
+    """
+    使用多种方法检测车牌区域
+    返回检测到的车牌区域列表
+    """
+    plate_regions = []
+    
+    try:
+        # 方法1：使用HyperLPR3检测车牌区域
+        if HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
+            try:
+                catcher = ocr_engines['hyperlpr3']
+                if len(image.shape) == 3:
+                    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                else:
+                    rgb_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+                
+                plates = catcher(rgb_image)
+                for plate in plates:
+                    if plate and len(plate) > 2 and plate[2] is not None:
+                        # HyperLPR3返回的边界框格式可能是[x1,y1,x2,y2]
+                        bbox = plate[2]
+                        if len(bbox) >= 4:
+                            plate_regions.append({
+                                'method': 'hyperlpr3',
+                                'bbox': bbox,
+                                'confidence': float(plate[1]) if len(plate) > 1 else 0.0
+                            })
+            except Exception as e:
+                print(f"HyperLPR3检测失败: {e}")
+        
+        # 方法2：使用OpenCV传统图像处理方法检测车牌区域
+        plate_regions.extend(detect_plate_by_opencv(image))
+        
+    except Exception as e:
+        print(f"车牌检测错误: {e}")
+    
+    return plate_regions
+
+def detect_plate_by_opencv(image):
+    """
+    使用OpenCV传统方法检测可能的车牌区域
+    """
+    regions = []
+    
+    try:
+        # 转换为灰度图
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+        
+        # 高斯模糊
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+        # 边缘检测
+        edges = cv2.Canny(blurred, 50, 150)
+        
+        # 形态学操作
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 5))
+        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+        
+        # 查找轮廓
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # 筛选可能的车牌轮廓
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # 车牌的宽高比通常在2.5-4.5之间
+            aspect_ratio = w / h if h > 0 else 0
+            area = w * h
+            
+            # 筛选条件：合适的宽高比和面积
+            if (2.0 <= aspect_ratio <= 5.0 and 
+                area > 500 and  # 最小面积
+                w > 50 and h > 15):  # 最小尺寸
+                
+                regions.append({
+                    'method': 'opencv',
+                    'bbox': [x, y, x + w, y + h],
+                    'confidence': min(aspect_ratio / 3.5, 1.0),  # 简单的置信度计算
+                    'area': area,
+                    'aspect_ratio': aspect_ratio
+                })
+        
+        # 按置信度排序
+        regions.sort(key=lambda x: x['confidence'], reverse=True)
+        
+    except Exception as e:
+        print(f"OpenCV车牌检测失败: {e}")
+    
+    return regions[:3]  # 最多返回3个候选区域
+
+def extract_and_enhance_plate_region(image, bbox, padding=10):
+    """
+    提取并增强车牌区域
+    """
+    try:
+        h, w = image.shape[:2]
+        
+        # 解析边界框
+        if len(bbox) >= 4:
+            x1, y1, x2, y2 = map(int, bbox[:4])
+        else:
+            return None
+        
+        # 添加padding并确保不越界
+        x1 = max(0, x1 - padding)
+        y1 = max(0, y1 - padding)
+        x2 = min(w, x2 + padding)
+        y2 = min(h, y2 + padding)
+        
+        # 提取区域
+        plate_region = image[y1:y2, x1:x2]
+        
+        if plate_region.size == 0:
+            return None
+        
+        # 增强处理
+        enhanced_region = enhance_plate_image(plate_region)
+        
+        return {
+            'original': plate_region,
+            'enhanced': enhanced_region,
+            'bbox': [x1, y1, x2, y2]
+        }
+        
+    except Exception as e:
+        print(f"区域提取失败: {e}")
+        return None
+
+def enhance_plate_image(plate_image):
+    """
+    增强车牌图像以提高OCR识别率
+    """
+    try:
+        # 转换为灰度
+        if len(plate_image.shape) == 3:
+            gray = cv2.cvtColor(plate_image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = plate_image
+        
+        # 调整尺寸 - 放大图像
+        scale_factor = 3
+        height, width = gray.shape
+        new_width = width * scale_factor
+        new_height = height * scale_factor
+        resized = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+        
+        # 高斯模糊去噪
+        blurred = cv2.GaussianBlur(resized, (3, 3), 0)
+        
+        # 对比度增强
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(blurred)
+        
+        # 二值化
+        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # 形态学操作去除噪点
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+        
+        # 转换回BGR格式以便OCR处理
+        enhanced_bgr = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2BGR)
+        
+        return enhanced_bgr
+        
+    except Exception as e:
+        print(f"图像增强失败: {e}")
+        return plate_image

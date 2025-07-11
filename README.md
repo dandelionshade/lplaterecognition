@@ -1,8 +1,20 @@
-# 智能车牌识别与图像处理平台
+# 天津仁爱学院车牌识别系统
 
-一个集成多种OCR引擎、OpenCV图像处理和Gemini AI的车牌识别解决方案。
+天津仁爱学院智能车牌识别管理系统，集成多种OCR引擎、OpenCV图像处理和Gemini AI的车牌识别解决方案。
 
 ## ✨ 主要功能
+
+### 🔐 管理员登录系统
+- 安全的管理员登录验证
+- 会话管理和自动跳转
+- 所有页面和API均需要登录验证
+- 默认账号密码：admin/admin
+
+### 🎛️ 管理员控制台
+- 直观的管理员仪表盘
+- 系统状态监控
+- 快速访问各功能模块
+- 安全的登出功能
 
 ### 🧠 Gemini AI 智能分析
 - 使用 Google Gemini 2.0 Flash 模型
@@ -30,31 +42,60 @@
 
 ## 🚀 快速开始
 
-### 1. 环境要求
+### 方式一：使用一键启动脚本（推荐）
+```bash
+# 克隆项目
+git clone <repository_url>
+cd lplaterecognition
+
+# 运行一键安装和启动脚本
+./quickstart.sh
+
+# 或者使用简化启动脚本
+./start_system.sh
+```
+
+### 方式二：手动安装
+
+#### 1. 环境要求
 - Python 3.8+
 - 支持的操作系统: Windows, macOS, Linux
 
-### 2. 安装依赖
+#### 2. 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 配置API密钥
+#### 3. 配置API密钥
 创建 `.env` 文件并添加 Gemini API 密钥：
-```
+```env
 API_KEY=your_gemini_api_key_here
+PORT=8080
+SECRET_KEY=tianjin_renai_college_plate_recognition_2025
 ```
 
 获取API密钥：
 - 访问 [Google AI Studio](https://aistudio.google.com/app/apikey)
 - 或者在 [Firebase Studio](https://console.firebase.google.com/) 中添加 Gemini API
 
-### 4. 启动服务
+#### 4. 启动服务
 ```bash
-python main.py
+python3 main.py
 ```
 
-服务将在 `http://127.0.0.1:8080` 启动
+## 🔐 系统登录
+
+### 管理员账户
+- **用户名**: admin
+- **密码**: admin
+- **登录地址**: http://127.0.0.1:8080/login
+
+### 系统功能
+- **管理控制台**: http://127.0.0.1:8080/admin
+- **系统主页**: http://127.0.0.1:8080/home  
+- **车牌识别**: http://127.0.0.1:8080/ocr
+
+⚠️ **安全提示**: 生产环境中请修改默认密码和SECRET_KEY
 
 ### 5. 访问界面
 - **主页**: `http://127.0.0.1:8080/home` - 功能介绍页面

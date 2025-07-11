@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>智能车牌识别与图像处理平台</title>
+  <title>天津仁爱学院车牌识别系统</title>
   <link rel="stylesheet" href="/ocr-style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -12,8 +12,20 @@
 <body>
   <div class="container">
     <header>
-      <h1><i class="fas fa-car"></i> 智能车牌识别与图像处理平台</h1>
-      <p class="subtitle">集成 OpenCV 图像处理、PaddleOCR、Tesseract、HyperLPR3 和 Gemini AI</p>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h1><i class="fas fa-car"></i> 天津仁爱学院车牌识别系统</h1>
+          <p class="subtitle">集成多种AI技术的智能车牌识别与图像处理平台</p>
+        </div>
+        <div>
+          <a href="/admin" style="margin-right: 15px; color: #667eea; text-decoration: none;">
+            <i class="fas fa-tachometer-alt"></i> 控制台
+          </a>
+          <a href="/logout" style="color: #e53e3e; text-decoration: none;">
+            <i class="fas fa-sign-out-alt"></i> 退出登录
+          </a>
+        </div>
+      </div>
     </header>
 
     <nav class="tab-nav">
@@ -101,6 +113,18 @@
                 <span>Tesseract</span>
               </label>
             </div>
+            
+            <div class="advanced-options">
+              <label class="checkbox-option">
+                <input type="checkbox" id="extract-plate-checkbox">
+                <span class="checkmark"></span>
+                <span class="checkbox-text">
+                  <i class="fas fa-crosshairs"></i> 启用车牌区域提取
+                  <small>自动检测并提取车牌区域，提高识别精度</small>
+                </span>
+              </label>
+            </div>
+            
             <button id="ocr-recognize" class="action-btn" disabled>
               <i class="fas fa-search"></i> 开始识别
             </button>
