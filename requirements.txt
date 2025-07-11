@@ -1,8 +1,8 @@
-# Dev environment
-pip
-autopep8
+# 开发环境依赖
+pip      # Python 的包安装器
+autopep8 # 一个自动格式化 Python 代码以符合 PEP 8 规范的工具
 
-# App
-google-genai # Client library for the Gemini API
-Pillow # PIL image-loading library
-flask
+# 应用核心依赖
+google-genai # Google Gemini API 的官方客户端库
+Pillow       # 一个强大的图像处理库，是 PIL (Python Imaging Library) 的一个友好分支
+flask        # 一个轻量级的 Python Web 框架
