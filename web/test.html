@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>功能测试页面</title>
+    <link rel="stylesheet" href="ocr-style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .test-container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }
+        
+        .test-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .test-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .demo-image {
+            width: 200px;
+            height: 150px;
+            background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
+            border: 2px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1><i class="fas fa-flask"></i> 前端功能测试页面</h1>
+        <p>测试智能车牌识别系统的各项前端功能</p>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-bell"></i> Toast通知系统测试</h3>
+            <button class="test-btn" onclick="testToast('success')">成功通知</button>
+            <button class="test-btn" onclick="testToast('info')">信息通知</button>
+            <button class="test-btn" onclick="testToast('warning')">警告通知</button>
+            <button class="test-btn" onclick="testToast('error')">错误通知</button>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-palette"></i> 主题切换测试</h3>
+            <button class="test-btn" onclick="testTheme()">切换深色/浅色主题</button>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-keyboard"></i> 键盘快捷键测试</h3>
+            <p>按下以下快捷键进行测试：</p>
+            <ul>
+                <li><kbd>Ctrl + 1-4</kbd> - 切换标签页（如果在主页面）</li>
+                <li><kbd>Ctrl + U</kbd> - 快速上传（如果在主页面）</li>
+                <li><kbd>Esc</kbd> - 关闭所有通知</li>
+            </ul>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-image"></i> 图片预览测试</h3>
+            <div class="demo-image">
+                <span>模拟图片预览区域</span>
+            </div>
+            <button class="test-btn" onclick="testImagePreview()">测试高级预览</button>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-car"></i> 车牌识别结果测试</h3>
+            <button class="test-btn" onclick="testPlateResults()">显示模拟车牌结果</button>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-question-circle"></i> 帮助系统测试</h3>
+            <button class="test-btn" onclick="testHelpSystem()">显示帮助模态框</button>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-history"></i> 操作历史测试</h3>
+            <button class="test-btn" onclick="testHistory()">添加历史记录</button>
+        </div>
+        
+        <div class="test-section">
+            <h3><i class="fas fa-copy"></i> 复制功能测试</h3>
+            <button class="test-btn" onclick="testCopy()">测试复制功能</button>
+        </div>
+    </div>
+    
+    <script type="module">
+        // 导入主要功能
+        import { showToast } from './ocr-main.js';
+        
+        // 全局测试函数
+        window.testToast = function(type) {
+            const messages = {
+                success: '操作成功完成！',
+                info: '这是一条信息提示',
+                warning: '请注意检查相关设置',
+                error: '操作失败，请重试'
+            };
+            
+            showToast(messages[type], type, {
+                actions: type === 'error' ? [
+                    { label: '重试', onClick: () => console.log('重试操作') },
+                    { label: '取消', onClick: () => console.log('取消操作') }
+                ] : []
+            });
+        };
+        
+        window.testTheme = function() {
+            document.body.classList.toggle('dark-theme');
+            const isDark = document.body.classList.contains('dark-theme');
+            showToast(`已切换到${isDark ? '深色' : '浅色'}主题`, 'info');
+        };
+        
+        window.testImagePreview = function() {
+            // 创建一个模拟的base64图片（1x1像素的透明PNG）
+            const demoBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+            const container = document.querySelector('.demo-image');
+            
+            // 使用高级预览功能
+            if (window.createAdvancedImagePreview) {
+                window.createAdvancedImagePreview(container, demoBase64, '测试图片');
+            } else {
+                container.innerHTML = '<img src="data:image/png;base64,' + demoBase64 + '" alt="测试图片" style="max-width: 100%;">';
+            }
+            
+            showToast('高级图片预览功能已激活', 'success');
+        };
+        
+        window.testPlateResults = function() {
+            // 模拟车牌识别结果
+            const mockPlates = [
+                {
+                    plate_no: '京A12345',
+                    confidence: 0.95,
+                    box: [100, 50, 200, 100]
+                },
+                {
+                    plate_no: '沪B67890',
+                    confidence: 0.87,
+                    box: [150, 80, 250, 130]
+                }
+            ];
+            
+            // 创建结果显示容器
+            const resultContainer = document.createElement('div');
+            resultContainer.style.cssText = `
+                margin-top: 20px;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 10px;
+                border: 1px solid #e9ecef;
+            `;
+            
+            document.querySelector('.test-section:nth-last-child(4)').appendChild(resultContainer);
+            
+            if (window.displayPlateResults) {
+                window.displayPlateResults(mockPlates, resultContainer);
+            } else {
+                resultContainer.innerHTML = '<p>车牌识别结果显示功能未加载</p>';
+            }
+            
+            showToast('已显示模拟车牌识别结果', 'success');
+        };
+        
+        window.testHelpSystem = function() {
+            if (window.showHelpModal) {
+                window.showHelpModal();
+            } else {
+                showToast('帮助系统功能未加载', 'warning');
+            }
+        };
+        
+        window.testHistory = function() {
+            if (window.addToHistory) {
+                window.addToHistory('test', {
+                    operation: '功能测试',
+                    timestamp: new Date().toLocaleString()
+                });
+                showToast('已添加测试历史记录', 'info');
+            } else {
+                showToast('历史记录功能未加载', 'warning');
+            }
+        };
+        
+        window.testCopy = function() {
+            const testText = '天津仁爱学院智能车牌识别系统测试文本';
+            if (window.copyText) {
+                window.copyText(testText, event.target);
+            } else {
+                navigator.clipboard.writeText(testText).then(() => {
+                    showToast('测试文本已复制到剪贴板', 'success');
+                }).catch(() => {
+                    showToast('复制功能测试失败', 'error');
+                });
+            }
+        };
+        
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            showToast('功能测试页面加载完成！点击各个按钮测试相应功能', 'info', {
+                duration: 5000
+            });
+            
+            // 测试键盘事件监听
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    showToast('ESC键测试成功 - 这个通知会被关闭', 'info');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

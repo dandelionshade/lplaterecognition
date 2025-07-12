@@ -1,3 +1,11 @@
+/*
+ * @Author: 张震 116089016+dandelionshade@users.noreply.github.com
+ * @Date: 2025-07-10 15:44:41
+ * @LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
+ * @LastEditTime: 2025-07-11 18:02:51
+ * @FilePath: /lplaterecognition/web/main.js
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 // 导入 gemini-api.js 文件中的 streamGemini 函数，用于与后端 API 通信。
 import { streamGemini } from './gemini-api.js';
 
