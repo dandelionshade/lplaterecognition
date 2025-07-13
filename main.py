@@ -2,7 +2,7 @@
 Author: 张震 116089016+dandelionshade@users.noreply.github.com
 Date: 2025-07-10 15:44:41
 LastEditors: 张震 116089016+dandelionshade@users.noreply.github.com
-LastEditTime: 2025-07-11 17:12:27
+LastEditTime: 2025-07-12 18:43:13
 FilePath: /lplaterecognition/main.py
 Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 '''
@@ -25,11 +25,18 @@ from werkzeug.utils import secure_filename
 from functools import wraps
 # 导入 hashlib 用于密码哈希
 import hashlib
+import io
+import json
+import os
+import re
+import time
+import traceback
+import base64
 
-# 导入 OpenCV 用于图像处理
 import cv2
-# 导入 numpy 用于数值计算
 import numpy as np
+# 导入 OpenCV 用于图像处理
+# 导入 numpy 用于数值计算
 # 导入 PIL 用于图像操作
 from PIL import Image
 
@@ -53,6 +60,13 @@ try:
 except ImportError:
     lpr3 = None
     HYPERLPR_AVAILABLE = False
+
+# 导入 easyocr 库
+try:
+    import easyocr
+    EASYOCR_AVAILABLE = True
+except ImportError:
+    EASYOCR_AVAILABLE = False
 
 # 导入 google.genai 库，这是 Google Gemini API 的 Python 客户端。
 import google.genai as genai
@@ -402,27 +416,40 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# 初始化 OCR 引擎
+# 初始化 OCR 引擎 - 优化版本
 ocr_engines = {}
-if PADDLEOCR_AVAILABLE and PaddleOCR is not None:
-    try:
-        ocr_engines['paddleocr'] = PaddleOCR(use_angle_cls=True, lang='ch')
-    except Exception as e:
-        print(f"PaddleOCR 初始化失败: {e}")
+
+def init_ocr_engines():
+    """延迟初始化OCR引擎，避免启动时错误"""
+    global ocr_engines, PADDLEOCR_AVAILABLE, EASYOCR_AVAILABLE, HYPERLPR_AVAILABLE
+    
+    # PaddleOCR初始化
+    if PADDLEOCR_AVAILABLE and PaddleOCR is not None and 'paddleocr' not in ocr_engines:
         try:
-            # 尝试更简单的初始化
-            ocr_engines['paddleocr'] = PaddleOCR()
-        except Exception as e2:
-            print(f"PaddleOCR 简化初始化也失败: {e2}")
+            ocr_engines['paddleocr'] = PaddleOCR(lang='ch', show_log=False)
+            print("✅ PaddleOCR 初始化成功")
+        except Exception as e:
+            print(f"❌ PaddleOCR 初始化失败: {e}")
             PADDLEOCR_AVAILABLE = False
 
-if HYPERLPR_AVAILABLE and lpr3 is not None:
-    try:
-        # 初始化 HyperLPR3 车牌识别器
-        ocr_engines['hyperlpr3'] = lpr3.LicensePlateCatcher()
-    except Exception as e:
-        print(f"HyperLPR3 初始化失败: {e}")
-        HYPERLPR_AVAILABLE = False
+    # HyperLPR3初始化
+    if HYPERLPR_AVAILABLE and lpr3 is not None and 'hyperlpr3' not in ocr_engines:
+        try:
+            ocr_engines['hyperlpr3'] = lpr3.LicensePlateCatcher()
+            print("✅ HyperLPR3 初始化成功")
+        except Exception as e:
+            print(f"❌ HyperLPR3 初始化失败: {e}")
+            HYPERLPR_AVAILABLE = False
+
+    # EasyOCR初始化（仅在需要时）
+    if EASYOCR_AVAILABLE and 'easyocr' not in ocr_engines:
+        try:
+            import easyocr
+            ocr_engines['easyocr'] = easyocr.Reader(['ch_sim', 'en'], gpu=False)
+            print("✅ EasyOCR 初始化成功")
+        except Exception as e:
+            print(f"❌ EasyOCR 初始化失败: {e}")
+            EASYOCR_AVAILABLE = False
 
 # 图像处理工具函数
 def allowed_file(filename):
@@ -540,14 +567,24 @@ def index():
 @login_required
 def home():
     """主页"""
-    return send_from_directory('web', 'home.html')
+    response = send_from_directory('web', 'home.html')
+    # 添加安全头
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
 
 # OCR页面 - 需要登录
 @app.route("/ocr")
 @login_required
 def ocr_page():
     """OCR识别页面"""
-    return send_from_directory('web', 'ocr.html')
+    response = send_from_directory('web', 'ocr.html')
+    # 添加安全头
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
 
 
 # 定义 /api/generate 路由的处理函数，只接受 POST 请求。
@@ -637,239 +674,574 @@ def process_image_api():
     
     return jsonify({"error": "Method not allowed"}), 405
 
-# OCR 识别 API
-@app.route("/api/ocr", methods=["POST"])
-@login_required
-def ocr_api():
-    """OCR 识别的 API 端点"""
-    if request.method == "POST":
+# OCR 识别 API - 多引擎备用系统
+@app.route("/api/ocr-simple", methods=["POST"])
+def ocr_simple_api():
+    """增强的OCR识别API，确保核心功能可用 - 多引擎备用系统"""
+    try:
+        data = request.get_json()
+        image_base64 = data.get('image')
+        engine = data.get('engine', 'auto')  # 改为自动选择最佳引擎
+        
+        if not image_base64:
+            return jsonify({"error": "没有提供图像数据"}), 400
+        
+        # 转换为 OpenCV 图像
         try:
-            data = request.get_json()
-            image_base64 = data.get('image')
-            engine = data.get('engine', 'paddleocr')
-            extract_plate = data.get('extract_plate', False)  # 是否提取车牌区域
-            
-            if not image_base64:
-                return jsonify({"error": "没有提供图像数据"}), 400
-            
-            # 转换为 OpenCV 图像
-            image = base64_to_opencv(image_base64)
+            image_data = base64.b64decode(image_base64)
+            nparr = np.frombuffer(image_data, np.uint8)
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if image is None:
                 return jsonify({"error": "图像格式错误"}), 400
-            
-            results = {}
-            plate_regions = []
-            
-            # 如果启用车牌提取功能
-            if extract_plate:
-                print("开始检测车牌区域...")
-                plate_regions = detect_license_plate_regions(image)
-                print(f"检测到 {len(plate_regions)} 个可能的车牌区域")
-            
-            # PaddleOCR
-            if engine == 'paddleocr' and 'paddleocr' in ocr_engines:
-                try:
-                    texts = []
-                    
-                    # 如果启用车牌提取，先尝试在车牌区域识别
-                    if extract_plate and plate_regions:
-                        print("使用PaddleOCR识别车牌区域...")
-                        for i, region_info in enumerate(plate_regions[:2]):  # 最多处理前2个区域
-                            extracted = extract_and_enhance_plate_region(image, region_info['bbox'])
-                            if extracted:
-                                # 在增强的车牌区域上运行OCR
-                                plate_results = ocr_engines['paddleocr'].ocr(extracted['enhanced'], cls=True)
-                                for line in plate_results[0] if plate_results and plate_results[0] else []:
-                                    if line and line[1][1] > 0.5:  # 置信度阈值
-                                        # 调整坐标到原图
-                                        bbox_orig = region_info['bbox']
-                                        adjusted_bbox = []
-                                        for point in line[0]:
-                                            adjusted_bbox.append([
-                                                point[0] + bbox_orig[0],
-                                                point[1] + bbox_orig[1]
-                                            ])
-                                        
-                                        texts.append({
-                                            'text': line[1][0],
-                                            'confidence': line[1][1],
-                                            'bbox': adjusted_bbox,
-                                            'region_source': f'plate_region_{i}',
-                                            'detection_method': region_info['method']
-                                        })
-                    
-                    # 如果车牌区域没有识别到内容，或者没有启用车牌提取，在整图上识别
-                    if not texts:
-                        print("在整图上使用PaddleOCR识别...")
-                        ocr_results = ocr_engines['paddleocr'].ocr(image, cls=True)
-                        for line in ocr_results[0] if ocr_results and ocr_results[0] else []:
-                            if line:
-                                texts.append({
-                                    'text': line[1][0],
-                                    'confidence': line[1][1],
-                                    'bbox': line[0],
-                                    'region_source': 'full_image'
-                                })
-                    
-                    results['paddleocr'] = {
-                        'texts': texts,
-                        'available': True,
-                        'plate_regions_used': len(plate_regions) if extract_plate else 0
-                    }
-                except Exception as e:
-                    results['paddleocr'] = {
-                        'error': str(e),
-                        'available': False
-                    }
-            
-            # Tesseract OCR
-            if engine == 'tesseract' and TESSERACT_AVAILABLE:
-                try:
-                    import pytesseract
-                    texts = []
-                    full_text = ""
-                    
-                    # 如果启用车牌提取，先尝试在车牌区域识别
-                    if extract_plate and plate_regions:
-                        print("使用Tesseract识别车牌区域...")
-                        for i, region_info in enumerate(plate_regions[:2]):  # 最多处理前2个区域
-                            extracted = extract_and_enhance_plate_region(image, region_info['bbox'])
-                            if extracted:
-                                # 转换为 PIL 图像
-                                pil_image = Image.fromarray(cv2.cvtColor(extracted['enhanced'], cv2.COLOR_BGR2RGB))
-                                
-                                # 使用专门的车牌识别配置
-                                config = '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                                text = pytesseract.image_to_string(pil_image, config=config, lang='eng')
-                                
-                                if text.strip():
-                                    # 获取详细信息
-                                    data_dict = pytesseract.image_to_data(pil_image, config=config, output_type=pytesseract.Output.DICT, lang='eng')
-                                    for j in range(len(data_dict['text'])):
-                                        if int(data_dict['conf'][j]) > 30:  # 降低置信度阈值
-                                            bbox_orig = region_info['bbox']
-                                            texts.append({
-                                                'text': data_dict['text'][j],
-                                                'confidence': float(data_dict['conf'][j]) / 100,
-                                                'bbox': [
-                                                    data_dict['left'][j] + bbox_orig[0],
-                                                    data_dict['top'][j] + bbox_orig[1],
-                                                    data_dict['left'][j] + data_dict['width'][j] + bbox_orig[0],
-                                                    data_dict['top'][j] + data_dict['height'][j] + bbox_orig[1]
-                                                ],
-                                                'region_source': f'plate_region_{i}',
-                                                'detection_method': region_info['method']
-                                            })
-                                    full_text += text.strip() + " "
-                    
-                    # 如果车牌区域没有识别到内容，或者没有启用车牌提取，在整图上识别
-                    if not texts:
-                        print("在整图上使用Tesseract识别...")
-                        # 转换为 PIL 图像
-                        pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-                        text = pytesseract.image_to_string(pil_image, lang='chi_sim+eng')
-                        full_text = text.strip()
+        except Exception as e:
+            return jsonify({"error": f"图像解码失败: {str(e)}"}), 400
+        
+        # 🔍 图像质量分析
+        image_quality = analyze_image_quality(image)
+        print(f"📊 图像质量评分: {image_quality['quality_score']}/100")
+        if image_quality['suggestions']:
+            print(f"💡 改进建议: {'; '.join(image_quality['suggestions'])}")
+        
+        # 根据图像质量调整识别策略
+        use_enhanced_processing = image_quality['quality_score'] < 70
+        
+        # 🚀 智能引擎选择策略 - 增加备用系统
+        def get_engines_priority(requested_engine):
+            if requested_engine == 'auto':
+                return ['hyperlpr3', 'paddleocr', 'easyocr', 'tesseract', 'fallback']
+            elif requested_engine == 'hyperlpr3':
+                return ['hyperlpr3', 'paddleocr', 'easyocr', 'tesseract', 'fallback']
+            elif requested_engine == 'paddleocr':
+                return ['paddleocr', 'easyocr', 'tesseract', 'hyperlpr3', 'fallback']
+            elif requested_engine == 'easyocr':
+                return ['easyocr', 'paddleocr', 'tesseract', 'hyperlpr3', 'fallback']
+            else:  # tesseract
+                return ['tesseract', 'paddleocr', 'easyocr', 'hyperlpr3', 'fallback']
+        
+        engines_to_try = get_engines_priority(engine)
+        best_result = None
+        best_confidence = 0
+        
+        # 🎯 多引擎识别循环
+        for engine_name in engines_to_try:
+            try:
+                engine_result = None
+                
+                # HyperLPR3 专业车牌识别
+                if engine_name == 'hyperlpr3' and HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
+                    try:
+                        catcher = ocr_engines['hyperlpr3']
                         
-                        # 获取详细信息
-                        data_dict = pytesseract.image_to_data(pil_image, output_type=pytesseract.Output.DICT, lang='chi_sim+eng')
-                        for i in range(len(data_dict['text'])):
-                            if int(data_dict['conf'][i]) > 0:
-                                texts.append({
-                                    'text': data_dict['text'][i],
-                                    'confidence': float(data_dict['conf'][i]) / 100,
-                                    'bbox': [
-                                        data_dict['left'][i],
-                                        data_dict['top'][i],
-                                        data_dict['left'][i] + data_dict['width'][i],
-                                        data_dict['top'][i] + data_dict['height'][i]
-                                    ],
-                                    'region_source': 'full_image'
-                                })
-                    
-                    results['tesseract'] = {
-                        'full_text': full_text,
-                        'texts': texts,
-                        'available': True,
-                        'plate_regions_used': len(plate_regions) if extract_plate else 0
-                    }
-                except Exception as e:
-                    results['tesseract'] = {
-                        'error': str(e),
-                        'available': False
-                    }
-            
-            # HyperLPR3 车牌识别
-            if engine == 'hyperlpr3' and HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
-                try:
-                    # 使用预初始化的车牌识别器
-                    catcher = ocr_engines['hyperlpr3']
-                    
-                    # 确保输入图像格式正确
-                    if len(image.shape) == 3:
-                        # 如果是彩色图像，转换为RGB格式（HyperLPR3可能需要RGB）
-                        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                        # 图像预处理增强，提高识别率
+                        enhanced_image = enhance_image_for_ocr(image, 'plate')
+                        rgb_image = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2RGB) if len(enhanced_image.shape) == 3 else cv2.cvtColor(enhanced_image, cv2.COLOR_GRAY2RGB)
+                        
                         plates = catcher(rgb_image)
-                    else:
-                        # 如果是灰度图像，转换为RGB
-                        rgb_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-                        plates = catcher(rgb_image)
-                    
-                    plate_results = []
-                    if plates and len(plates) > 0:
-                        for plate in plates:
-                            if plate and len(plate) >= 2:  # 确保有车牌号和置信度
-                                plate_info = {
-                                    'plate_no': str(plate[0]) if plate[0] else '',
-                                    'confidence': float(plate[1]) if isinstance(plate[1], (int, float)) else 0.0
+                        
+                        # 如果增强图像没有结果，尝试原图
+                        if not plates or len(plates) == 0:
+                            print("🔄 HyperLPR3: 尝试原图识别...")
+                            rgb_original = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+                            plates = catcher(rgb_original)
+                        
+                        if plates and len(plates) > 0:
+                            plate_results = []
+                            low_confidence_plates = []
+                            
+                            for plate in plates:
+                                if plate and len(plate) >= 2:
+                                    plate_no = str(plate[0]) if plate[0] else ''
+                                    confidence = float(plate[1]) if isinstance(plate[1], (int, float)) else 0.0
+                                    
+                                    plate_info = {
+                                        'text': plate_no,
+                                        'confidence': confidence,
+                                        'bbox': plate[2] if len(plate) > 2 else None
+                                    }
+                                    
+                                    if plate_no and confidence > 0.1:  # 正常置信度车牌
+                                        plate_results.append(plate_info)
+                                    elif plate_no and confidence > 0.05:  # 低置信度但有内容的车牌
+                                        low_confidence_plates.append(plate_info)
+                            
+                            # 处理正常置信度车牌
+                            if plate_results:
+                                best_plate = max(plate_results, key=lambda x: x['confidence'])
+                                engine_result = {
+                                    'engine': 'hyperlpr3',
+                                    'text': best_plate['text'],
+                                    'confidence': best_plate['confidence'],
+                                    'plates': plate_results,
+                                    'low_confidence_plates': low_confidence_plates,
+                                    'engine_available': True,
+                                    'enhanced_processing': True
                                 }
-                                # 添加边界框信息（如果有）
-                                if len(plate) > 2 and plate[2] is not None:
-                                    plate_info['bbox'] = plate[2]
-                                plate_results.append(plate_info)
+                                print(f"✅ HyperLPR3识别成功: {best_plate['text']} (置信度: {best_plate['confidence']:.2f})")
+                                if low_confidence_plates:
+                                    print(f"📊 HyperLPR3低置信度候选: {', '.join([f'{p['text']}({p['confidence']:.2f})' for p in low_confidence_plates])}")
+                            
+                            # 处理只有低置信度车牌的情况
+                            elif low_confidence_plates:
+                                best_low_plate = max(low_confidence_plates, key=lambda x: x['confidence'])
+                                print(f"⚠️ HyperLPR3: 检测到车牌数据但置信度过低")
+                                print(f"📋 低置信度候选车牌: {', '.join([f'{p['text']}({p['confidence']:.2f})' for p in low_confidence_plates])}")
+                                print(f"🎯 最高置信度候选: {best_low_plate['text']} (置信度: {best_low_plate['confidence']:.2f})")
+                                
+                                # 将低置信度结果作为备用信息保存
+                                engine_result = {
+                                    'engine': 'hyperlpr3_low_confidence',
+                                    'text': best_low_plate['text'],
+                                    'confidence': best_low_plate['confidence'] * 0.5,  # 降权处理
+                                    'low_confidence_plates': low_confidence_plates,
+                                    'engine_available': True,
+                                    'is_low_confidence': True,
+                                    'suggestion': '建议提高图片质量或调整光照条件'
+                                }
+                            else:
+                                print("⚠️ HyperLPR3: 未检测到任何车牌")
+                    except Exception as e:
+                        print(f"❌ HyperLPR3失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # PaddleOCR 通用识别
+                elif engine_name == 'paddleocr' and PADDLEOCR_AVAILABLE and 'paddleocr' in ocr_engines:
+                    try:
+                        # 使用新的PaddleOCR API，移除已弃用的cls参数
+                        paddle_results = ocr_engines['paddleocr'].ocr(image)
+                        
+                        if paddle_results and paddle_results[0]:
+                            texts = []
+                            confidences = []
+                            
+                            for line in paddle_results[0]:
+                                if line and len(line) >= 2 and line[1][1] > 0.3:  # 降低置信度阈值
+                                    text = line[1][0].strip()
+                                    conf = line[1][1]
+                                    texts.append(text)
+                                    confidences.append(conf)
+                            
+                            if texts:
+                                full_text = ''.join(texts).replace(' ', '')  # 去除空格
+                                avg_confidence = sum(confidences) / len(confidences)
+                                
+                                # 车牌格式检查加分
+                                import re
+                                plate_pattern = r'[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-Z][A-Z0-9]{4,5}'
+                                if re.search(plate_pattern, full_text):
+                                    avg_confidence = min(avg_confidence + 0.3, 1.0)  # 格式匹配奖励
+                                
+                                engine_result = {
+                                    'engine': 'paddleocr',
+                                    'text': full_text,
+                                    'confidence': avg_confidence,
+                                    'texts': texts,
+                                    'individual_confidences': confidences,
+                                    'engine_available': True,
+                                    'plate_format_matched': bool(re.search(plate_pattern, full_text))
+                                }
+                                print(f"✅ PaddleOCR识别成功: {full_text} (置信度: {avg_confidence:.2f})")
+                                if len(texts) > 1:
+                                    print(f"📋 PaddleOCR识别详情: {', '.join([f'{t}({c:.2f})' for t, c in zip(texts, confidences)])}")
+                    except Exception as e:
+                        print(f"❌ PaddleOCR失败: {e}")
+                
+                # Tesseract OCR 备用识别
+                elif engine_name == 'tesseract' and TESSERACT_AVAILABLE:
+                    try:
+                        import pytesseract
+                        from PIL import Image as PILImage
+                        
+                        # 图像预处理增强
+                        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                        
+                        # 应用多种预处理尝试
+                        processed_images = [
+                            gray,  # 原始灰度
+                            enhance_image_for_ocr(gray, 'plate'),  # 车牌专用增强
+                            cv2.GaussianBlur(gray, (3, 3), 0),  # 轻微模糊
+                        ]
+                        
+                        best_text = ""
+                        best_conf = 0
+                        
+                        for processed_img in processed_images:
+                            # 车牌专用配置
+                            configs = [
+                                '--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼',
+                                '--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼',
+                                '--psm 6'
+                            ]
+                            
+                            for config in configs:
+                                try:
+                                    if len(processed_img.shape) == 3:
+                                        pil_image = PILImage.fromarray(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB))
+                                    else:
+                                        pil_image = PILImage.fromarray(processed_img)
+                                    
+                                    text = pytesseract.image_to_string(pil_image, lang='chi_sim+eng', config=config)
+                                    text = text.strip().replace(' ', '').replace('\n', '')
+                                    
+                                    if text and len(text) >= 5:
+                                        # 更智能的置信度评估
+                                        import re
+                                        plate_chars = "京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                                        clean_text = ''.join(filter(lambda char: char in plate_chars, text))
+                                        cleanliness_score = len(clean_text) / len(text) if len(text) > 0 else 0
+                                        
+                                        # 基础置信度基于清晰度
+                                        confidence = cleanliness_score * 0.7
+                                        
+                                        # 车牌格式检查
+                                        if re.search(r'[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-Z]', text):
+                                            confidence += 0.25
+                                        
+                                        if confidence > best_conf:
+                                            best_text = text
+                                            best_conf = confidence
+                                            
+                                except Exception:
+                                    continue
+                        
+                        if best_text:
+                            # 车牌格式匹配检查
+                            import re
+                            plate_pattern = r'[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-Z]'
+                            format_matched = bool(re.search(plate_pattern, best_text))
+                            
+                            engine_result = {
+                                'engine': 'tesseract',
+                                'text': best_text,
+                                'confidence': best_conf,
+                                'engine_available': True,
+                                'plate_format_matched': format_matched,
+                                'processing_method': 'multi_config_enhanced'
+                            }
+                            
+                            status_icon = "🎯" if format_matched else "⚠️"
+                            format_info = "车牌格式" if format_matched else "通用文本"
+                            print(f"{status_icon} Tesseract识别成功: {best_text} (置信度: {best_conf:.2f}, {format_info})")
+                            
+                    except Exception as e:
+                        print(f"❌ Tesseract失败: {e}")
+                
+                # EasyOCR 备用识别
+                elif engine_name == 'easyocr' and EASYOCR_AVAILABLE and 'easyocr' in ocr_engines:
+                    try:
+                        # EasyOCR 返回一个列表，每个元素包含 [bbox, text, confidence]
+                        easyocr_results = ocr_engines['easyocr'].readtext(image)
+                        
+                        if easyocr_results:
+                            texts = [res[1] for res in easyocr_results]
+                            confidences = [res[2] for res in easyocr_results]
+                            bboxes = [res[0] for res in easyocr_results]
+                            
+                            if texts:
+                                full_text = ''.join(texts).strip()
+                                avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+                                
+                                # 车牌格式检查
+                                import re
+                                plate_pattern = r'[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-Z]'
+                                format_matched = bool(re.search(plate_pattern, full_text))
+                                
+                                if format_matched:
+                                    avg_confidence = min(avg_confidence + 0.2, 1.0)  # 格式匹配奖励
+                                
+                                engine_result = {
+                                    'engine': 'easyocr',
+                                    'text': full_text,
+                                    'confidence': avg_confidence,
+                                    'engine_available': True,
+                                    'texts': texts,
+                                    'individual_confidences': confidences,
+                                    'bboxes': bboxes,
+                                    'plate_format_matched': format_matched
+                                }
+                                
+                                status_icon = "🎯" if format_matched else "✅"
+                                format_info = "车牌格式" if format_matched else "通用文本"
+                                print(f"{status_icon} EasyOCR识别成功: {full_text} (置信度: {avg_confidence:.2f}, {format_info})")
+                                if len(texts) > 1:
+                                    print(f"📋 EasyOCR识别详情: {', '.join([f'{t}({c:.2f})' for t, c in zip(texts, confidences)])}")
+
+                    except Exception as e:
+                        print(f"❌ EasyOCR失败: {e}")
+
+                # 🆘 终极备用方案 - fallback_ocr
+                elif engine_name == 'fallback':
+                    try:
+                        from fallback_ocr import run_fallback_ocr
+                        fallback_result = run_fallback_ocr(image_base64)
+                        
+                        if fallback_result.get('success'):
+                            engine_result = {
+                                'engine': 'fallback',
+                                'text': fallback_result['text'],
+                                'confidence': fallback_result['confidence'],
+                                'message': fallback_result.get('message', '备用识别'),
+                                'engine_available': True
+                            }
+                            print(f"🆘 备用系统识别: {fallback_result['text']} (置信度: {fallback_result['confidence']:.2f})")
+                        else:
+                            print(f"❌ 备用系统失败: {fallback_result.get('error', '未知错误')}")
+                            
+                    except Exception as e:
+                        print(f"❌ 备用系统异常: {e}")
+                
+                # 评估当前引擎结果
+                if engine_result and engine_result.get('confidence', 0) > best_confidence:
+                    best_result = engine_result
+                    best_confidence = engine_result['confidence']
                     
-                    results['hyperlpr3'] = {
-                        'plates': plate_results,
-                        'available': True,
-                        'count': len(plate_results)
-                    }
-                except Exception as e:
-                    results['hyperlpr3'] = {
-                        'error': str(e),
-                        'available': False,
-                        'count': 0
-                    }
+                    # 如果置信度足够高，并且格式正确，提前返回结果
+                    is_plate_format = best_result.get('plate_format_matched', False)
+                    # HyperLPR3 is always a plate format
+                    if best_result.get('engine') and 'hyperlpr3' in best_result['engine']:
+                        is_plate_format = True
+
+                    if best_confidence > 0.75 and is_plate_format:
+                        print(f"🎯 高置信度车牌结果，提前返回: {engine_result['text']}")
+                        break
+                        
+            except Exception as e:
+                print(f"💥 引擎 {engine_name} 运行失败: {e}")
+                continue
+        
+        # 🎉 返回最佳结果
+        if best_result and best_result.get('text'):
+            response_data = {
+                "success": True,
+                "engine": best_result['engine'],
+                "text": best_result['text'],
+                "confidence": best_result['confidence'],
+                "results": best_result,
+                "image_quality": image_quality,
+                "message": f"使用 {best_result['engine']} 引擎识别成功"
+            }
             
-            # 如果请求的引擎不可用
-            if engine not in results:
-                available_engines = []
-                if PADDLEOCR_AVAILABLE and 'paddleocr' in ocr_engines:
-                    available_engines.append('paddleocr')
-                if TESSERACT_AVAILABLE:
-                    available_engines.append('tesseract')
-                if HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
-                    available_engines.append('hyperlpr3')
+            # 添加低置信度警告
+            if best_result.get('is_low_confidence'):
+                response_data['warning'] = "识别置信度较低，建议验证结果准确性"
+                response_data['low_confidence_candidates'] = best_result.get('low_confidence_plates', [])
+                response_data['suggestion'] = best_result.get('suggestion', '建议提高图片质量或调整光照条件')
+            
+            # 添加车牌格式匹配信息
+            if 'plate_format_matched' in best_result:
+                response_data['plate_format_matched'] = best_result['plate_format_matched']
+                if not best_result['plate_format_matched']:
+                    response_data['format_warning'] = "识别结果可能不是标准车牌格式"
+            
+            return jsonify(response_data)
+        else:
+            # 🔄 即使没有高置信度结果，也要检查是否有低置信度候选结果
+            low_confidence_data = None
+            for engine_name in engines_to_try:
+                try:
+                    if engine_name == 'hyperlpr3' and HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
+                        catcher = ocr_engines['hyperlpr3']
+                        enhanced_image = enhance_image_for_ocr(image, 'plate')
+                        rgb_image = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2RGB) if len(enhanced_image.shape) == 3 else cv2.cvtColor(enhanced_image, cv2.COLOR_GRAY2RGB)
+                        plates = catcher(rgb_image)
+                        
+                        if plates and len(plates) > 0:
+                            low_confidence_plates = []
+                            for plate in plates:
+                                if plate and len(plate) >= 2:
+                                    plate_no = str(plate[0]) if plate[0] else ''
+                                    confidence = float(plate[1]) if isinstance(plate[1], (int, float)) else 0.0
+                                    if plate_no and confidence > 0.01:  # 即使很低的置信度也收集
+                                        low_confidence_plates.append({
+                                            'text': plate_no,
+                                            'confidence': confidence,
+                                            'bbox': plate[2] if len(plate) > 2 else None
+                                        })
+                            
+                            if low_confidence_plates:
+                                # 按置信度排序
+                                low_confidence_plates.sort(key=lambda x: x['confidence'], reverse=True)
+                                best_candidate = low_confidence_plates[0]
+                                
+                                low_confidence_data = {
+                                    "success": False,
+                                    "engine": "hyperlpr3_low_confidence",
+                                    "text": best_candidate['text'],
+                                    "confidence": best_candidate['confidence'],
+                                    "low_confidence_candidates": low_confidence_plates,
+                                    "image_quality": image_quality,
+                                    "warning": "检测到车牌但置信度较低，以下是候选结果",
+                                    "suggestion": "建议提高图片清晰度、调整光照条件或重新拍摄"
+                                }
+                                break
+                except Exception as e:
+                    print(f"💥 低置信度检查失败 {engine_name}: {e}")
+                    continue
+            
+            # 如果有低置信度候选结果，返回它们
+            if low_confidence_data:
+                return jsonify(low_confidence_data)
+            
+            # 最后的备用处理
+            try:
+                # 基础图像分析
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 
                 return jsonify({
-                    "error": f"OCR 引擎 '{engine}' 不可用",
-                    "available_engines": available_engines
-                }), 400
+                    "success": False,
+                    "engine": "fallback",
+                    "error": "所有OCR引擎识别失败",
+                    "detected_objects": len(contours),
+                    "image_quality": image_quality,
+                    "suggestion": "检测到图像中有内容，建议：1. 提高图片清晰度 2. 调整光照条件 3. 确保车牌完整可见",
+                    "quality_suggestions": image_quality.get('suggestions', []),
+                    "available_engines": {
+                        "tesseract": TESSERACT_AVAILABLE,
+                        "paddleocr": PADDLEOCR_AVAILABLE and 'paddleocr' in ocr_engines,
+                        "easyocr": EASYOCR_AVAILABLE and 'easyocr' in ocr_engines,
+                        "hyperlpr3": HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines
+                    }
+                })
+            except Exception as e:
+                return jsonify({
+                    "success": False,
+                    "engine": "error",
+                    "error": f"系统处理失败: {str(e)}",
+                    "image_quality": image_quality
+                })
+        
+    except Exception as e:
+        print(f"💥 API系统错误: {e}")
+        return jsonify({
+            "success": False,
+            "engine": "system",
+            "error": f"系统错误: {str(e)}"
+        }), 500
+
+@app.route("/api/ocr", methods=["POST"])
+def ocr_api():
+    """简化的OCR识别API - MVP版本"""
+    try:
+        # 初始化OCR引擎（延迟加载）
+        init_ocr_engines()
+        
+        data = request.get_json()
+        if not data or 'image' not in data:
+            return jsonify({"error": "没有提供图像数据"}), 400
+            
+        image_base64 = data.get('image')
+        engine = data.get('engine', 'paddleocr')
+        
+        # 转换图像
+        image = base64_to_opencv(image_base64)
+        if image is None:
+            return jsonify({"error": "图像格式错误"}), 400
+
+        # 核心识别逻辑
+        results = {}
+        
+        # PaddleOCR
+        if engine == 'paddleocr' and PADDLEOCR_AVAILABLE and 'paddleocr' in ocr_engines:
+            try:
+                ocr_results = ocr_engines['paddleocr'].ocr(image)
+                texts = []
+                
+                if ocr_results and ocr_results[0]:
+                    for line in ocr_results[0]:
+                        if line and len(line) >= 2:
+                            texts.append({
+                                'text': line[1][0],
+                                'confidence': line[1][1],
+                                'bbox': line[0]
+                            })
+                
+                results['paddleocr'] = {
+                    'texts': texts,
+                    'available': True,
+                    'count': len(texts)
+                }
+            except Exception as e:
+                results['paddleocr'] = {
+                    'error': str(e),
+                    'available': False
+                }
+        
+        # Tesseract OCR
+        elif engine == 'tesseract' and TESSERACT_AVAILABLE:
+            try:
+                import pytesseract
+                pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                text = pytesseract.image_to_string(pil_image, lang='chi_sim+eng')
+                
+                results['tesseract'] = {
+                    'full_text': text.strip(),
+                    'texts': [{'text': text.strip(), 'confidence': 0.8}],
+                    'available': True
+                }
+            except Exception as e:
+                results['tesseract'] = {
+                    'error': str(e),
+                    'available': False
+                }
+        
+        # HyperLPR3
+        elif engine == 'hyperlpr3' and HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
+            try:
+                catcher = ocr_engines['hyperlpr3']
+                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                plates = catcher(rgb_image)
+                
+                plate_results = []
+                if plates:
+                    for plate in plates:
+                        if plate and len(plate) >= 2:
+                            plate_results.append({
+                                'plate_no': str(plate[0]),
+                                'confidence': float(plate[1])
+                            })
+                
+                results['hyperlpr3'] = {
+                    'plates': plate_results,
+                    'available': True,
+                    'count': len(plate_results)
+                }
+            except Exception as e:
+                results['hyperlpr3'] = {
+                    'error': str(e),
+                    'available': False
+                }
+        
+        # 检查是否有结果
+        if engine not in results:
+            available_engines = []
+            if PADDLEOCR_AVAILABLE and 'paddleocr' in ocr_engines:
+                available_engines.append('paddleocr')
+            if TESSERACT_AVAILABLE:
+                available_engines.append('tesseract')
+            if HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
+                available_engines.append('hyperlpr3')
             
             return jsonify({
-                "success": True,
-                "engine": engine,
-                "results": results[engine]
-            })
+                "error": f"OCR引擎 '{engine}' 不可用",
+                "available_engines": available_engines
+            }), 400
         
-        except Exception as e:
-            return jsonify({"error": f"OCR 识别失败: {str(e)}"}), 500
-    
-    return jsonify({"error": "Method not allowed"}), 405
-
+        return jsonify({
+            "success": True,
+            "engine": engine,
+            "results": results[engine]
+        })
+        
+    except Exception as e:
+        return jsonify({"error": f"OCR识别失败: {str(e)}"}), 500
 # 获取可用的 OCR 引擎列表
 @app.route("/api/ocr-engines", methods=["GET"])
-@login_required
 def get_ocr_engines():
     """获取可用的 OCR 引擎列表"""
+    init_ocr_engines()  # 确保引擎已初始化
+    
     engines = {}
     
     if PADDLEOCR_AVAILABLE and 'paddleocr' in ocr_engines:
@@ -920,222 +1292,116 @@ def get_ocr_engines():
         "available": len([e for e in engines.values() if e['available']])
     })
 
-# 文件上传 API
-@app.route("/api/upload", methods=["POST"])
-@login_required
-def upload_file():
-    """文件上传 API"""
-    if 'file' not in request.files:
-        return jsonify({"error": "没有选择文件"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "没有选择文件"}), 400
-    
-    if file and allowed_file(file.filename):
-        try:
-            # 读取文件内容
-            file_content = file.read()
-            
-            # 转换为 base64
-            image_base64 = base64.b64encode(file_content).decode('utf-8')
-            
-            return jsonify({
-                "success": True,
-                "image": image_base64,
-                "filename": secure_filename(file.filename or "unknown"),
-                "size": len(file_content)
-            })
-        except Exception as e:
-            return jsonify({"error": f"文件处理失败: {str(e)}"}), 500
-    else:
-        return jsonify({"error": "不支持的文件格式"}), 400
-
-# 定义一个能匹配所有路径的路由，用于提供静态文件。
+# 静态文件服务
 @app.route('/<path:path>')
 def serve_static(path):
-    # 从 'web' 目录下发送与请求路径匹配的文件。
-    # 例如，请求 /style.css 会返回 web/style.css 文件。
-    return send_from_directory('web', path)
-
-
-# 这是一个标准的 Python 入口点检查。
-# 只有当这个脚本被直接执行时（而不是被导入时），下面的代码才会运行。
-if __name__ == "__main__":
-    # 运行 Flask 应用。
-    # port: 设置监听的端口，从环境变量 'PORT' 获取，如果不存在则默认为 8080。
-    app.run(host='127.0.0.1', port=int(os.environ.get('PORT', 8080)), debug=True)
-
-# 车牌检测和处理函数
-def detect_license_plate_regions(image):
-    """
-    使用多种方法检测车牌区域
-    返回检测到的车牌区域列表
-    """
-    plate_regions = []
-    
+    """提供静态文件服务"""
     try:
-        # 方法1：使用HyperLPR3检测车牌区域
-        if HYPERLPR_AVAILABLE and 'hyperlpr3' in ocr_engines:
-            try:
-                catcher = ocr_engines['hyperlpr3']
-                if len(image.shape) == 3:
-                    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                else:
-                    rgb_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-                
-                plates = catcher(rgb_image)
-                for plate in plates:
-                    if plate and len(plate) > 2 and plate[2] is not None:
-                        # HyperLPR3返回的边界框格式可能是[x1,y1,x2,y2]
-                        bbox = plate[2]
-                        if len(bbox) >= 4:
-                            plate_regions.append({
-                                'method': 'hyperlpr3',
-                                'bbox': bbox,
-                                'confidence': float(plate[1]) if len(plate) > 1 else 0.0
-                            })
-            except Exception as e:
-                print(f"HyperLPR3检测失败: {e}")
+        response = send_from_directory('web', path)
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except Exception:
+        return jsonify({"error": "文件未找到"}), 404
+
+# 简化的图像处理函数
+def enhance_image_for_ocr(image, image_type='general'):
+    """简单的图像增强处理"""
+    try:
+        # 转为灰度图
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+            
+        # 直方图均衡化
+        enhanced = cv2.equalizeHist(gray)
         
-        # 方法2：使用OpenCV传统图像处理方法检测车牌区域
-        plate_regions.extend(detect_plate_by_opencv(image))
-        
+        # 转回BGR格式
+        if len(image.shape) == 3:
+            result = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+        else:
+            result = enhanced
+            
+        return result
     except Exception as e:
-        print(f"车牌检测错误: {e}")
-    
-    return plate_regions
+        print(f"图像增强失败: {e}")
+        return image
 
-def detect_plate_by_opencv(image):
-    """
-    使用OpenCV传统方法检测可能的车牌区域
-    """
-    regions = []
-    
+def analyze_image_quality(image):
+    """分析图像质量，提供改进建议"""
     try:
-        # 转换为灰度图
+        # 转为灰度图进行分析
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             gray = image
         
-        # 高斯模糊
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        # 计算图像统计信息
+        mean_brightness = np.mean(gray)
+        std_brightness = np.std(gray)
         
-        # 边缘检测
-        edges = cv2.Canny(blurred, 50, 150)
+        # 计算拉普拉斯方差（模糊度检测）
+        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
         
-        # 形态学操作
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 5))
-        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+        # 计算对比度
+        contrast = std_brightness
         
-        # 查找轮廓
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # 图像尺寸
+        height, width = gray.shape
         
-        # 筛选可能的车牌轮廓
-        for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
+        # 评估和建议
+        suggestions = []
+        quality_score = 100
+        
+        if mean_brightness < 50:
+            suggestions.append("图像过暗，建议增加亮度")
+            quality_score -= 20
+        elif mean_brightness > 200:
+            suggestions.append("图像过亮，建议降低亮度或减少曝光")
+            quality_score -= 15
             
-            # 车牌的宽高比通常在2.5-4.5之间
-            aspect_ratio = w / h if h > 0 else 0
-            area = w * h
+        if laplacian_var < 100:
+            suggestions.append("图像可能模糊，建议重新拍摄或使用防抖")
+            quality_score -= 25
             
-            # 筛选条件：合适的宽高比和面积
-            if (2.0 <= aspect_ratio <= 5.0 and 
-                area > 500 and  # 最小面积
-                w > 50 and h > 15):  # 最小尺寸
-                
-                regions.append({
-                    'method': 'opencv',
-                    'bbox': [x, y, x + w, y + h],
-                    'confidence': min(aspect_ratio / 3.5, 1.0),  # 简单的置信度计算
-                    'area': area,
-                    'aspect_ratio': aspect_ratio
-                })
-        
-        # 按置信度排序
-        regions.sort(key=lambda x: x['confidence'], reverse=True)
-        
-    except Exception as e:
-        print(f"OpenCV车牌检测失败: {e}")
-    
-    return regions[:3]  # 最多返回3个候选区域
-
-def extract_and_enhance_plate_region(image, bbox, padding=10):
-    """
-    提取并增强车牌区域
-    """
-    try:
-        h, w = image.shape[:2]
-        
-        # 解析边界框
-        if len(bbox) >= 4:
-            x1, y1, x2, y2 = map(int, bbox[:4])
-        else:
-            return None
-        
-        # 添加padding并确保不越界
-        x1 = max(0, x1 - padding)
-        y1 = max(0, y1 - padding)
-        x2 = min(w, x2 + padding)
-        y2 = min(h, y2 + padding)
-        
-        # 提取区域
-        plate_region = image[y1:y2, x1:x2]
-        
-        if plate_region.size == 0:
-            return None
-        
-        # 增强处理
-        enhanced_region = enhance_plate_image(plate_region)
-        
+        if contrast < 20:
+            suggestions.append("对比度不足，建议调整光照或增强对比度")
+            quality_score -= 15
+            
+        if width < 200 or height < 200:
+            suggestions.append("图像分辨率较低，建议使用更高分辨率")
+            quality_score -= 10
+            
         return {
-            'original': plate_region,
-            'enhanced': enhanced_region,
-            'bbox': [x1, y1, x2, y2]
+            'quality_score': max(quality_score, 0),
+            'brightness': mean_brightness,
+            'contrast': contrast,
+            'sharpness': laplacian_var,
+            'resolution': f"{width}x{height}",
+            'suggestions': suggestions
         }
         
     except Exception as e:
-        print(f"区域提取失败: {e}")
-        return None
+        print(f"图像质量分析失败: {e}")
+        return {
+            'quality_score': 50,
+            'error': str(e),
+            'suggestions': ['无法分析图像质量，请检查图像格式']
+        }
 
-def enhance_plate_image(plate_image):
-    """
-    增强车牌图像以提高OCR识别率
-    """
-    try:
-        # 转换为灰度
-        if len(plate_image.shape) == 3:
-            gray = cv2.cvtColor(plate_image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = plate_image
-        
-        # 调整尺寸 - 放大图像
-        scale_factor = 3
-        height, width = gray.shape
-        new_width = width * scale_factor
-        new_height = height * scale_factor
-        resized = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-        
-        # 高斯模糊去噪
-        blurred = cv2.GaussianBlur(resized, (3, 3), 0)
-        
-        # 对比度增强
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(blurred)
-        
-        # 二值化
-        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        
-        # 形态学操作去除噪点
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-        
-        # 转换回BGR格式以便OCR处理
-        enhanced_bgr = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2BGR)
-        
-        return enhanced_bgr
-        
-    except Exception as e:
-        print(f"图像增强失败: {e}")
-        return plate_image
+# 应用启动
+if __name__ == "__main__":
+    print("🚀 启动天津仁爱学院车牌识别系统...")
+    print(f"📊 OCR引擎状态:")
+    print(f"   - PaddleOCR: {'✅' if PADDLEOCR_AVAILABLE else '❌'}")
+    print(f"   - Tesseract: {'✅' if TESSERACT_AVAILABLE else '❌'}")
+    print(f"   - HyperLPR3: {'✅' if HYPERLPR_AVAILABLE else '❌'}")
+    print(f"   - EasyOCR: {'✅' if EASYOCR_AVAILABLE else '❌'}")
+    print("🌐 访问 http://127.0.0.1:8081/login 开始使用")
+    
+    # 创建上传目录
+    os.makedirs('uploads', exist_ok=True)
+    
+    # 启动Flask应用
+    app.run(host="0.0.0.0", port=8081, debug=False)
